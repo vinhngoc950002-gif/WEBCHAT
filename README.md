@@ -134,3 +134,13 @@ Mỗi phòng có một mô hình địa danh riêng ở giữa quảng trường
 Kênh plaza bổ sung handshake `player-hello`, heartbeat và bản tin rời phòng. Khi ảnh chụp Presence cập nhật chậm, hai client vẫn trao đổi trạng thái trực tiếp trong đúng kênh phòng. Tiêu đề phòng và bảng nhân vật sử dụng cùng callback số người từ transport, thay vì đếm từ kênh chat riêng. Số đếm là số tài khoản duy nhất, bao gồm bản thân; khi mất kết nối thì hiển thị trạng thái đang kết nối thay vì khẳng định đã đồng bộ.
 
 `node scripts/check-room-discovery.mjs` kiểm tra trường hợp cố tình không cung cấp Presence snapshot, tìm nhau qua hello, chuyển động, cách ly phòng và cập nhật số lượng sau khi rời. Đây vẫn là cơ chế đồng bộ client, không phải máy chủ xác thực vị trí/chống giả mạo.
+
+## Nhân vật Nam / Nữ và ổn định kết nối
+
+- Form tạo tài khoản có hai lựa chọn Nam / Nữ. Giá trị `avatar_gender` được lưu trong Supabase Auth user metadata, không cần bảng hay SQL mới. Khi đăng nhập lại, avatar được dựng theo dữ liệu tài khoản; metadata cũ chưa có lựa chọn được mặc định Nam.
+- Nam dùng tóc ngắn / áo khoác / quần; Nữ dùng tóc dài / trang phục váy anime. Cả hai vẫn có cùng khớp chân và tay để đi bộ, ngồi và vẫy tay. Giới tính avatar được truyền trong snapshot và Broadcast để bên kia dựng đúng mô hình.
+- Đã tái hiện lỗi server `Client presence rate limit exceeded`: bản trước lặp `track()` quá thường xuyên, khiến kênh bị đóng. Bản mới chỉ track khi tham gia/nối lại kênh; vị trí và heartbeat nhẹ dùng Broadcast. Kênh Presence thừa trong chat chung và danh sách xã hội đã được bỏ; các mục này dùng cùng roster từ bản đồ.
+- Nếu channel chuyển `CLOSED` / lỗi, transport tạo lại channel với thời gian chờ tăng dần; giữ hình nhân vật trong khi nối lại và gửi snapshot mới sau khi kết nối. Tư cách thành viên Presence được coi là bằng chứng còn online, không xóa người chỉ vì tab nền chậm gửi chuyển động.
+- Bật heartbeat Web Worker ở trình duyệt hỗ trợ. Việc cập nhật vị trí được giới hạn khoảng 5 lần/giây khi di chuyển; không cập nhật Presence theo frame.
+- Kiểm tra nhanh: `node scripts/check-room-recovery.mjs` (khôi phục CLOSED, chỉ track một lần, truyền giới tính, mô hình Nam/Nữ).
+- Kiểm tra dài có Supabase `.env.local`: `node scripts/check-room-stability.mjs` (90 giây, chủ động đóng kênh tại giây 35, kiểm tra giữ nhân vật và giới tính phía nhận).

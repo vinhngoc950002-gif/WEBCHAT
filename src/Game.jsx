@@ -22,8 +22,9 @@ function makeLabel(text,{bubble=false}={}){
  const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,depthTest:false}));sprite.scale.set(bubble?4:2.7,bubble?.75:.51,1);sprite.renderOrder=10;return sprite;
 }
 
-export default function Game({action,chatText,joystick,roomName='Toàn quốc',roomId,userId,nickname='Bạn',onPlayerCount}){
- const host=useRef(null),api=useRef(null),joy=useRef(joystick),nameRef=useRef(nickname),countRef=useRef(onPlayerCount);
+export default function Game({action,chatText,joystick,roomName='Toàn quốc',roomId,userId,nickname='Bạn',gender='male',onPlayerCount,onRoomPlayers}){
+ const host=useRef(null),api=useRef(null),joy=useRef(joystick),nameRef=useRef(nickname),countRef=useRef(onPlayerCount),rosterRef=useRef(onRoomPlayers);
+ rosterRef.current=onRoomPlayers;
  countRef.current=onPlayerCount;
  nameRef.current=nickname;
  const [participantCount,setParticipantCount]=useState(null);
@@ -33,7 +34,7 @@ export default function Game({action,chatText,joystick,roomName='Toàn quốc',r
  const selectedName=players.find(player=>player.id===selectedId)?.name||'';
  useEffect(()=>{joy.current=joystick;},[joystick]);
  useEffect(()=>{
-  const parent=host.current;if(!parent)return;setError('');setSeatState({mode:'walking',name:''});setSelectedId('');setCombatStatus('');setPlayers([]);setParticipantCount(null);countRef.current?.(null);setConnectionStatus('Đang kết nối người chơi…');
+  const parent=host.current;if(!parent)return;setError('');setSeatState({mode:'walking',name:''});setSelectedId('');setCombatStatus('');setPlayers([]);rosterRef.current?.([]);setParticipantCount(null);countRef.current?.(null);setConnectionStatus('Đang kết nối người chơi…');
   let renderer;
   try{renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});}catch{setError('Không khởi tạo được 3D. Hãy bật tăng tốc đồ họa trong trình duyệt và tải lại trang.');return;}
   renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.75));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -85,13 +86,13 @@ export default function Game({action,chatText,joystick,roomName='Toàn quốc',r
   for(const x of [-17,17])for(const z of [-24,-8,8,24]){cylinder(.07,.17,4.7,0x454d48,x,2.5,z);roundBox(.55,.65,.55,0xf4dda5,x,5,z);const lamp=material(0xf4dda5);lamp.emissive.set(0xffce85);lamp.emissiveIntensity=.45;cylinder(.4,.12,.25,0x454d48,x,5.5,z);}
   box(4.2,2,2.5,0xb39b80,-13,1.2,-33);const roof=mesh(new THREE.ConeGeometry(3.2,1.6,4),0x8d7661,-13,3,-33);roof.rotation.y=Math.PI/4;obstacles.push({x:-13,z:-33,r:2.8});
   const sign=makeLabel('QUẢNG TRƯỜNG '+roomName.toLocaleUpperCase('vi'));sign.position.set(0,5.5,-33);sign.scale.set(10,1.87,1);scene.add(sign);
-  function avatar(name,index,x,z){
-   const rig=createAnimeAvatar(index);rig.group.position.set(x,0,z);scene.add(rig.group);
+  function avatar(name,index,x,z,avatarGender='male'){
+   const rig=createAnimeAvatar(index,avatarGender);rig.group.position.set(x,0,z);scene.add(rig.group);
    textures.push(rig.ramp);
    const label=makeLabel(name);label.position.y=3.85;rig.group.add(label);
    rig.group.userData.character=rig;rig.name=name;return {...rig,label,shade:shadow(x,z,1.8,1.8)};
   }
-  const spawn=playerSpawn(userId||'local');const hero=avatar(nameRef.current,playerAppearance(userId||'local'),spawn.x,spawn.z);const bots=[];
+  const spawn=playerSpawn(userId||'local');const hero=avatar(nameRef.current,playerAppearance(userId||'local'),spawn.x,spawn.z,gender);const bots=[];
   let selectedBot=null,pendingAttack=null,fight=null,waveStarted=-Infinity;
   let yaw=Math.PI/4,distance=23,bubble=null,bubbleUntil=0,emoteUntil=0,path=[],pendingSeat=null,seated=null;
   const keys=new Set(),raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2();let drag=null,hovered=null;
@@ -110,15 +111,15 @@ export default function Game({action,chatText,joystick,roomName='Toàn quốc',r
   function attack(){if(selectedBot?.remote){say('Chan Nhau giữa người chơi chưa được bật.');return;}if(!selectedBot||fight||pendingAttack)return;stand();waveStarted=-Infinity;const route=planEncounter(hero.group.position,selectedBot.group.position,obstacles);if(!route){say('Chưa tìm được lối đến nhân vật này.');return;}keys.clear();pendingSeat=null;setSeatState({mode:'walking',name:''});path=route.path;pendingAttack=selectedBot;setCombatStatus('Đang tiến đến '+selectedBot.name);}
   api.current={say,stand,wave,attack,selectBot,nearestSeat(){const nearest=[...benches].sort((a,b)=>hero.group.position.distanceToSquared(new THREE.Vector3(a.x,0,a.z))-hero.group.position.distanceToSquared(new THREE.Vector3(b.x,0,b.z)))[0];requestSeat(nearest);},emote(emoji){if(emoji==='👋'){wave();return;}say(emoji);if(!seated)emoteUntil=performance.now()+900;}};
   let network=null,disposed=false;
-  function publishRoster(){setPlayers(bots.map(bot=>({id:bot.id,name:bot.name})));}
+  function publishRoster(){const roster=bots.map(bot=>({id:bot.id,name:bot.name}));setPlayers(roster);rosterRef.current?.(roster);}
   function disposeAvatar(bot){scene.remove(bot.group);scene.remove(bot.shade);const geometries=new Set(),materials=new Set(),maps=new Set([bot.ramp]);for(const root of [bot.group,bot.shade])root.traverse(object=>{if(object.geometry)geometries.add(object.geometry);if(object.material){materials.add(object.material);if(object.material.map&&object.material.map!==textures[3])maps.add(object.material.map);}});geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());maps.forEach(t=>t.dispose());const index=textures.indexOf(bot.ramp);if(index>=0)textures.splice(index,1);}
-  function updatePlayer(state){if(disposed)return;let bot=bots.find(item=>item.id===state.id);if(!bot){bot=avatar(state.name,playerAppearance(state.id),state.x,state.z);bot.id=state.id;bot.remote=true;bot.waveId=state.waveId;bot.waveStarted=state.waveId?performance.now()-state.waveAge:-Infinity;bots.push(bot);publishRoster();}
+  function updatePlayer(state){if(disposed)return;let bot=bots.find(item=>item.id===state.id);const wasSelected=selectedBot?.id===state.id;if(bot&&bot.gender!==state.gender){bots.splice(bots.indexOf(bot),1);disposeAvatar(bot);bot=null;}if(!bot){bot=avatar(state.name,playerAppearance(state.id),state.x,state.z,state.gender);bot.id=state.id;bot.remote=true;bot.waveId=state.waveId;bot.waveStarted=state.waveId?performance.now()-state.waveAge:-Infinity;bots.push(bot);if(wasSelected)selectedBot=bot;publishRoster();}
    if(bot.name!==state.name){bot.name=state.name;const old=bot.label;bot.group.remove(old);old.material.map.dispose();old.material.dispose();bot.label=makeLabel(state.name);bot.label.position.y=3.85;bot.group.add(bot.label);publishRoster();}
    if(bot.waveId!==state.waveId){bot.waveId=state.waveId;bot.waveStarted=performance.now()-state.waveAge;}
    bot.targetState=state;
   }
   function removePlayer(id){const index=bots.findIndex(bot=>bot.id===id);if(index<0)return;const bot=bots[index];if(selectedBot===bot){selectedBot=null;setSelectedId('');cancelCombat();path=[];}bots.splice(index,1);disposeAvatar(bot);publishRoster();}
-  if(supabase&&userId&&roomId)network=connectRoomPlayers({client:supabase,roomId,userId,name:nameRef.current,initialState:{x:spawn.x,z:spawn.z,yaw:0,seated:false,moving:false,waveId:'',waveAge:3200},onJoin:updatePlayer,onUpdate:updatePlayer,onLeave:removePlayer,onCount:count=>{if(!disposed){setParticipantCount(count);countRef.current?.(count);}},onStatus:status=>{if(disposed)return;if(status==='PLAYER_ERROR'){setError('Không hiển thị được một người chơi. Hãy tải lại trang.');return;}setConnectionStatus(status==='SYNCED'?'Đang trong phòng '+roomName:status==='SUBSCRIBED'?'Đang tìm người trong phòng…':'Đang kết nối lại người chơi…');}});
+  if(supabase&&userId&&roomId)network=connectRoomPlayers({client:supabase,roomId,userId,name:nameRef.current,initialState:{gender,x:spawn.x,z:spawn.z,yaw:0,seated:false,moving:false,waveId:'',waveAge:3200},onJoin:updatePlayer,onUpdate:updatePlayer,onLeave:removePlayer,onCount:count=>{if(!disposed){setParticipantCount(count);countRef.current?.(count);}},onStatus:status=>{if(disposed)return;if(status==='PLAYER_ERROR'){setError('Không hiển thị được một người chơi. Hãy tải lại trang.');return;}setConnectionStatus(status==='SYNCED'?'Đang trong phòng '+roomName:status==='SUBSCRIBED'?'Đang tìm người trong phòng…':'Đang kết nối lại người chơi…');}});
   const focused=()=>['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
   function keydown(e){if(focused())return;const key=e.key.toLowerCase();if(key==='e'&&!e.repeat){e.preventDefault();if(seated)stand();else api.current.nearestSeat();return;}if(['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d'].includes(key)){e.preventDefault();keys.add(key);}}
   const keyup=e=>keys.delete(e.key.toLowerCase()),blur=()=>{keys.clear();drag=null;};
@@ -158,13 +159,13 @@ export default function Game({action,chatText,joystick,roomName='Toàn quốc',r
    const marked=pendingSeat||hovered;indicator.visible=Boolean(marked)&&!seated;if(marked)indicator.position.set(marked.x,.235,marked.z);
    look.lerp(new THREE.Vector3(hero.group.position.x,seatedNow?1.25:1.4,hero.group.position.z),1-Math.exp(-7*dt));camera.position.set(look.x+Math.sin(yaw)*distance,look.y+distance*.68,look.z+Math.cos(yaw)*distance);camera.lookAt(look);camera.updateMatrixWorld();
 
-   network?.publish({x:hero.group.position.x,z:hero.group.position.z,yaw:hero.body.rotation.y,seated:seatedNow,moving,waveId:Number.isFinite(waveStarted)?String(waveStarted):'',waveAge:Math.min(3200,Math.max(0,now-waveStarted))},nameRef.current);
+   network?.publish({gender,x:hero.group.position.x,z:hero.group.position.z,yaw:hero.body.rotation.y,seated:seatedNow,moving,waveId:Number.isFinite(waveStarted)?String(waveStarted):'',waveAge:Math.min(3200,Math.max(0,now-waveStarted))},nameRef.current);
    fishPond.update(now);renderer.render(scene,camera);
   }
   frame=requestAnimationFrame(animate);
   return()=>{disposed=true;network?.close();cancelAnimationFrame(frame);resize.disconnect();api.current=null;window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',cancel);canvas.removeEventListener('pointerleave',cancel);canvas.removeEventListener('contextmenu',context);canvas.removeEventListener('wheel',wheel);
    const geometries=new Set(),mats=new Set(),maps=new Set(textures);scene.traverse(object=>{if(object.geometry)geometries.add(object.geometry);if(object.material){const list=Array.isArray(object.material)?object.material:[object.material];list.forEach(mat=>{mats.add(mat);if(mat.map)maps.add(mat.map);});}});geometries.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());maps.forEach(t=>t.dispose());environment.dispose();renderer.dispose();canvas.remove();};
- },[roomId,roomName,userId]);
+ },[roomId,roomName,userId,gender]);
  useEffect(()=>{if(action){if(action.type==='wave')api.current?.wave();else api.current?.emote(action.emoji);}},[action]);
  useEffect(()=>{if(chatText)api.current?.say(chatText.text);},[chatText]);
  return <div ref={host} className="phaser-host game-3d-host" aria-label="Quảng trường 3D: nhấn để đi, chọn ghế đá để ngồi, kéo để xoay camera">{error&&<p role="alert" className="game-3d-error">{error}</p>}<div className="character-actions"><div className="character-action-buttons"><button onClick={()=>api.current?.wave()}>👋 Vẫy tay</button><button disabled title="Chan Nhau giữa người chơi chưa được bật" onClick={()=>api.current?.attack()}>🥊 Chan Nhau</button></div><details className="character-directory"><summary>Người trong phòng · {participantCount??'…'}</summary><div className="character-directory-list">{players.length===0&&<p className="character-directory-empty">Đang tìm người chơi khác trong phòng.</p>}{players.map(player=><button key={player.id} aria-pressed={selectedId===player.id} onClick={()=>api.current?.selectBot(player.id)}><span className="mini-avatar">{player.name[0]}</span><span>{player.name}</span><span className="profile-arrow">›</span></button>)}</div></details>{selectedName&&<div className="character-profile"><div className="profile-title"><strong>{selectedName.replace(' · Mẫu','')}</strong><button aria-label="Đóng thông tin nhân vật" onClick={()=>api.current?.selectBot('')}>×</button></div><dl><div><dt>Phòng</dt><dd>{roomName}</dd></div><div><dt>Trạng thái</dt><dd>{combatStatus||'Đang ở quảng trường'}</dd></div></dl><p>Vẫy tay để chào người bạn đang chọn.</p></div>}<small role="status">{selectedName?'Đã chọn '+selectedName:connectionStatus}</small></div><div className="seat-controls"><span role="status">{seatState.mode==='seated'?`Đang ngồi · ${seatState.name}`:seatState.mode==='approaching'?`Đang đi tới ${seatState.name}…`:'Chọn ghế đá để ngồi nghỉ'}</span><button onClick={()=>seatState.mode==='seated'?api.current?.stand():api.current?.nearestSeat()}>{seatState.mode==='seated'?'Đứng dậy':'Ngồi ghế gần nhất'} <kbd>E</kbd></button></div></div>;

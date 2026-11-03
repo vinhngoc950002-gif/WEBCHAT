@@ -5,6 +5,7 @@ import {supabase} from './supabase.js';
 export default function FriendsMenu({session,nickname,location,onLogin}){
  const uid=session?.user?.id;
  const [open,setOpen]=useState(false),[links,setLinks]=useState([]),[online,setOnline]=useState({}),[error,setError]=useState(''),[busy,setBusy]=useState(false),[ready,setReady]=useState(false);
+ const lastProfile=useRef('');
  const root=useRef(null),channelRef=useRef(null),profile=useRef({name:nickname,location});profile.current={name:nickname,location};
  useEffect(()=>{
   if(!open)return;const outside=e=>{if(!root.current?.contains(e.target))setOpen(false);};const key=e=>{if(e.key==='Escape')setOpen(false);};document.addEventListener('pointerdown',outside);document.addEventListener('keydown',key);return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',key);};
@@ -15,12 +16,12 @@ export default function FriendsMenu({session,nickname,location,onLogin}){
   async function load(){const request=++version;const {data,error}=await supabase.from('friendships').select('*').order('created_at',{ascending:false});if(alive&&request===version){if(error)setError('Chưa tải được bạn bè. Kiểm tra SQL 002 trong Supabase.');else setLinks(data||[]);}}
   const channel=supabase.channel('avatar-global-online',{config:{presence:{key:uid}}});channelRef.current=channel;
   channel.on('presence',{event:'sync'},()=>{if(alive)setOnline(channel.presenceState());}).on('postgres_changes',{event:'*',schema:'public',table:'friendships'},load).subscribe(async status=>{
-   if(!alive)return;if(status==='SUBSCRIBED'){setReady(true);await channel.track(profile.current);load();}else if(['CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(status)){setReady(false);setOnline({});}
+   if(!alive)return;if(status==='SUBSCRIBED'){lastProfile.current=JSON.stringify(profile.current);setReady(true);await channel.track(profile.current);load();}else if(['CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(status)){setReady(false);setOnline({});}
   });
   load();window.addEventListener('avatar-friendships-changed',load);const poll=setInterval(load,15000);const refresh=()=>{if(document.visibilityState==='visible')load();};document.addEventListener('visibilitychange',refresh);
   return()=>{alive=false;window.removeEventListener('avatar-friendships-changed',load);clearInterval(poll);document.removeEventListener('visibilitychange',refresh);channelRef.current=null;supabase.removeChannel(channel);};
  },[uid]);
- useEffect(()=>{if(uid&&ready)channelRef.current?.track({name:nickname,location});},[uid,ready,nickname,location]);
+ useEffect(()=>{if(!uid||!ready)return;const next={name:nickname,location},encoded=JSON.stringify(next);if(lastProfile.current===encoded)return;const timer=setTimeout(()=>{lastProfile.current=encoded;channelRef.current?.track(next);},15000);return()=>clearTimeout(timer);},[uid,ready,nickname,location]);
  const other=link=>({id:link.requester_id===uid?link.recipient_id:link.requester_id,name:link.requester_id===uid?link.recipient_name:link.requester_name});
  const incoming=links.filter(link=>link.status==='pending'&&link.recipient_id===uid),friends=links.filter(link=>link.status==='accepted'),outgoing=links.filter(link=>link.status==='pending'&&link.requester_id===uid);
  const onlineFriends=friends.filter(link=>online[other(link).id]?.length);

@@ -1,0 +1,10 @@
+import fs from 'node:fs';
+import {createClient} from '@supabase/supabase-js';
+import {connectRoomPlayers,playerSpawn} from '../src/roomPlayers.js';
+const env=Object.fromEntries(fs.readFileSync('.env.local','utf8').trim().split(/\r?\n/).map(line=>{const i=line.indexOf('=');return [line.slice(0,i),line.slice(i+1)];}));
+const room='qa-long-'+Date.now(),clients=[],links=[],seen=[new Map(),new Map()],counts=[[],[]];const start=Date.now();let lost=false;
+for(let i=0;i<2;i++){const client=createClient(env.VITE_SUPABASE_URL,env.VITE_SUPABASE_ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false},realtime:{heartbeatCallback:status=>console.log(Math.round((Date.now()-start)/1000)+'s heartbeat '+i+' '+status)}});clients.push(client);const id=crypto.randomUUID();links.push(connectRoomPlayers({client,roomId:room,userId:id,name:'Long test '+i,initialState:{gender:i===0?'male':'female',...playerSpawn(id),yaw:0,seated:false,moving:false,waveId:'',waveAge:3200},onJoin:p=>seen[i].set(p.id,p),onUpdate:p=>seen[i].set(p.id,p),onLeave:id=>{seen[i].delete(id);if(Date.now()-start>5000)lost=true;},onCount:n=>counts[i].push(n),onStatus:s=>{if(s!=='SYNCED')console.log(Math.round((Date.now()-start)/1000)+'s status '+i+' '+s);}}));}
+setTimeout(()=>{console.log('FORCE channel close at 35s');links[0].channel.unsubscribe();},35000);
+const motion=setInterval(()=>{const t=(Date.now()-start)/1000;links.forEach((link,i)=>link.publish({x:Math.sin(t)*3+i*2,z:12+Math.cos(t),yaw:t,moving:true}));},100);
+const monitor=setInterval(()=>console.log(JSON.stringify({seconds:Math.round((Date.now()-start)/1000),counts:counts.map(a=>a.at(-1)),seen:seen.map(m=>m.size)})),10000);
+await new Promise(r=>setTimeout(r,90000));clearInterval(motion);clearInterval(monitor);const genders=seen.map(m=>[...m.values()][0]?.gender);console.log(JSON.stringify({PASS:!lost&&seen.every(m=>m.size===1)&&genders[0]==='female'&&genders[1]==='male',lost,genders}));for(const l of links)l.close();await Promise.all(clients.map(c=>c.removeAllChannels()));clients.forEach(c=>c.realtime.disconnect());if(lost)process.exitCode=1;

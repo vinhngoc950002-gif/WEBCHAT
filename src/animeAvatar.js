@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {normalizeAvatarGender} from './avatarProfile.js';
 import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 export const animePalettes=[
@@ -10,9 +11,10 @@ export const animePalettes=[
 ];
 
 // Articulated chibi rig: the same hip/knee pivots support walking and bench poses.
-export function createAnimeAvatar(index=0){
- const palette=animePalettes[index%animePalettes.length];
- const group=new THREE.Group(),body=new THREE.Group();group.add(body);
+export function createAnimeAvatar(index=0,gender='male'){
+ gender=normalizeAvatarGender(gender);
+ const palette={...animePalettes[index%animePalettes.length],long:gender==='female'};
+ const group=new THREE.Group(),body=new THREE.Group();group.add(body);group.userData.avatarGender=gender;
  const ramp=new THREE.DataTexture(new Uint8Array([95,95,95,255,158,158,158,255,218,218,218,255,255,255,255,255]),4,1,THREE.RGBAFormat);
  ramp.minFilter=THREE.NearestFilter;ramp.magFilter=THREE.NearestFilter;ramp.colorSpace=THREE.NoColorSpace;ramp.needsUpdate=true;
  const materials=new Map(),ink=new THREE.MeshBasicMaterial({color:0x34304b,side:THREE.BackSide});
@@ -45,6 +47,10 @@ export function createAnimeAvatar(index=0){
  const nose=ball(.045,0xf0bca9,0,2.515,.471,body,false);nose.scale.set(.6,.8,.7);
  const smileCurve=new THREE.QuadraticBezierCurve3(new THREE.Vector3(-.065,2.435,.443),new THREE.Vector3(0,2.39,.468),new THREE.Vector3(.065,2.435,.443));
  part(new THREE.TubeGeometry(smileCurve,12,.012,5,false),0x9a5765,0,0,0,body,false);
+ if(gender==='female'){
+  part(new THREE.CylinderGeometry(.36,.56,.44,12),palette.coat,0,1.21,0);
+  for(const side of [-1,1]){const ribbon=box(.17,.12,.065,palette.accent,side*.11,1.86,.3);ribbon.rotation.z=side*.3;}
+ }
  const legs=[],calves=[],arms=[],forearms=[];
  for(const x of [-.2,.2]){const hip=new THREE.Group();hip.position.set(x,1.15,0);body.add(hip);part(new THREE.CapsuleGeometry(.14,.25,4,10),0x414362,0,-.24,0,hip);const knee=new THREE.Group();knee.position.y=-.5;hip.add(knee);part(new THREE.CapsuleGeometry(.12,.27,4,10),0x565773,0,-.24,0,knee);box(.26,.12,.29,0xf8f0e6,0,-.39,0,knee);box(.29,.18,.44,palette.coat,0,-.5,.09,knee);box(.31,.065,.46,0xf5efe6,0,-.565,.09,knee);legs.push(hip);calves.push(knee);}
  for(const side of [-1,1]){
@@ -61,5 +67,5 @@ export function createAnimeAvatar(index=0){
   const thumb=part(new THREE.CapsuleGeometry(.028,.06,3,6),0xffd6bd,side*.115,-.35,0,elbow,false);thumb.rotation.z=side*.65;
   arms.push(arm);forearms.push(elbow);
  }
- return {group,body,legs,calves,arms,forearms,ramp};
+ return {group,body,legs,calves,arms,forearms,ramp,gender};
 }
