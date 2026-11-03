@@ -110,3 +110,10 @@ Mỗi phòng có một mô hình địa danh riêng ở giữa quảng trường
 - Mục “Người chơi đang online” cho phép gửi lời mời đến tài khoản thật từ sảnh; trong phòng vẫn dùng được danh sách người chơi hiện có.
 - Yêu cầu đã chạy `supabase/002_friends_private_messages.sql`. Không cần bảng dữ liệu mới cho phiên bản này. Kiểm thử bằng hai tài khoản trên hai trình duyệt: gửi → badge bên nhận → chấp nhận → bên gửi hiện đã kết bạn; thử từ chối để xác nhận có thể gửi lại. Mở/đóng ứng dụng bên kia để kiểm tra online/offline. Các thay đổi được nhận qua Realtime, có tải lại dự phòng mỗi 15 giây để đồng bộ thao tác từ chối/xóa.
 - NPC trên bản đồ chỉ mô phỏng cục bộ. Nút Kết Bạn tạo lời mời chờ, không tự chấp nhận. Icon Bạn bè có mục “Thử phía nhận · NPC” với quyết định mẫu để kiểm tra giao diện. Dữ liệu NPC cũ tự kết bạn ngay không được coi là lời mời đã chấp nhận trong luồng mới.
+
+## Tài khoản bằng tên đăng nhập
+
+- Đăng ký bằng tên đăng nhập (3–24 chữ a–z, số, dấu `_`), mật khẩu và tên nhân vật. Tên đăng nhập không phân biệt hoa/thường.
+- Supabase vẫn quản lý mật khẩu và phiên đăng nhập; ứng dụng ánh xạ tên sang định danh nội bộ `player.<username>@webchat-one-psi.vercel.app`. Người dùng không phải sở hữu hộp thư này. Không đổi miền định danh sau khi đã tạo tài khoản. Không lưu mật khẩu tại localStorage hay bảng dữ liệu riêng.
+- Trong Supabase Auth, bật Email provider và **tắt Confirm email**, rồi Save. Frontend kiểm tra `/auth/v1/settings` trước đăng ký để không tạo tài khoản chờ xác nhận ngoài ý muốn.
+- Tài khoản email cũ vẫn đăng nhập được bằng email cũ; không tự chuyển đổi chúng thành tài khoản tên đăng nhập. Form mới không yêu cầu email khi đăng ký.
