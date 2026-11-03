@@ -2,7 +2,7 @@
 
 Website mẫu có sảnh **64 phòng cộng đồng**, bản đồ đẳng trục 2.5D bằng Phaser 3, nhân vật tự di chuyển bằng WASD / phím mũi tên / chạm bản đồ / joystick, biểu cảm và bong bóng thoại, giao diện chat bằng React.
 
-> **Phạm vi Alpha 0.1:** nhân vật khác trong bản đồ là NPC mẫu. Chat ở chế độ demo chỉ nằm trên máy hiện tại. Sau khi cấu hình Supabase, các tài khoản có thể gửi/nhận tin nhắn online trong phòng (và Presence đếm kết nối); **chưa có multiplayer đồng bộ chuyển động**. Chức năng này thuộc Alpha 0.2.
+> **Phạm vi Alpha 0.1:** nhân vật khác trong bản đồ là NPC mẫu. Chat ở chế độ demo chỉ nằm trên máy hiện tại. Sau khi cấu hình Supabase, các tài khoản có thể gửi/nhận tin nhắn online trong phòng (và Presence đếm kết nối); đã có đồng bộ người chơi cùng phòng qua Supabase Realtime (xem mục Đồng bộ người chơi ở cuối tài liệu).
 
 ## 1. Mở trong VS Code trên Windows
 
@@ -118,3 +118,13 @@ Mỗi phòng có một mô hình địa danh riêng ở giữa quảng trường
 - Trong Supabase Auth, bật Email provider và **tắt Confirm email**, rồi Save. Frontend kiểm tra `/auth/v1/settings` trước đăng ký để không tạo tài khoản chờ xác nhận ngoài ý muốn.
 - Tài khoản email cũ vẫn đăng nhập được bằng email cũ; không tự chuyển đổi chúng thành tài khoản tên đăng nhập. Form mới không yêu cầu email khi đăng ký.
 
+
+
+## Đồng bộ người chơi cùng phòng
+
+- `src/roomPlayers.js` dùng Presence cho danh sách và ảnh chụp trạng thái ban đầu, Broadcast cho vị trí/hướng di chuyển khoảng 10 lần/giây khi có thay đổi. Mỗi phòng có kênh riêng theo mã phòng; không cần thêm bảng hoặc chạy SQL mới cho vị trí.
+- Nhân vật thật được tạo khi tài khoản khác vào phòng và được gỡ khi rời phòng; bỏ qua chính tài khoản hiện tại, kể cả nếu mở nhiều tab. Avatar khác nhau theo ID, có tên hiển thị và vị trí xuất phát theo tài khoản.
+- Đồng bộ di chuyển, hướng quay, ngồi/đứng và vẫy cả hai tay. Client nội suy chuyển động giữa các bản tin. Danh sách nhỏ trên bản đồ và nhấn chọn nhân vật dùng ID để tránh nhầm người có tên giống nhau.
+- Đây là đồng bộ client qua kênh Realtime công khai, không phải máy chủ vật lý có chống gian lận. Chan Nhau giữa người chơi chưa được bật; hoạt ảnh đánh NPC cũ không được áp dụng giả lên tài khoản thật.
+- Kiểm tra kết nối thực tế: có `.env.local` chứa hai biến Supabase rồi chạy `node scripts/check-room-sync.mjs`. Bài kiểm tra mở hai kết nối độc lập cùng một phòng kiểm thử tạm, kiểm tra thấy nhau, vào sau, vị trí, vẫy tay, tư thế ngồi, rời phòng và cách ly phòng. Không tạo tài khoản hoặc ghi dữ liệu lâu dài.
+- Kiểm tra giao diện bằng hai trình duyệt / cửa sổ ẩn danh, đăng nhập hai tài khoản khác nhau vào cùng mã phòng; di chuyển ở một cửa sổ và quan sát cửa sổ kia. Cả hai phải tải lại bản triển khai mới.

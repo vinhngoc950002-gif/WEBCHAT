@@ -9,9 +9,10 @@ import {createAnimeAvatar} from './animeAvatar.js';
 import {wavePose,fightPose,planEncounter} from './characterActions.js';
 import {surfaceTexture,contactShadow} from './plazaMaterials.js';
 import {WORLD_LIMIT,seatPose,planPath} from './plazaNavigation.js';
+import {supabase} from './supabase.js';
+import {connectRoomPlayers,playerAppearance,playerSpawn} from './roomPlayers.js';
 
-// Only actual scene participants belong here; sample NPCs are no longer spawned.
-const PLAZA_CHARACTERS=[];
+
 const clamp=v=>THREE.MathUtils.clamp(v,-WORLD_LIMIT,WORLD_LIMIT);
 function makeLabel(text,{bubble=false}={}){
  const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=192;
@@ -21,13 +22,16 @@ function makeLabel(text,{bubble=false}={}){
  const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,depthTest:false}));sprite.scale.set(bubble?4:2.7,bubble?.75:.51,1);sprite.renderOrder=10;return sprite;
 }
 
-export default function Game({action,chatText,joystick,roomName='Toàn quốc'}){
- const host=useRef(null),api=useRef(null),joy=useRef(joystick);
+export default function Game({action,chatText,joystick,roomName='Toàn quốc',roomId,userId,nickname='Bạn'}){
+ const host=useRef(null),api=useRef(null),joy=useRef(joystick),nameRef=useRef(nickname);
+ nameRef.current=nickname;
+ const [players,setPlayers]=useState([]),[connectionStatus,setConnectionStatus]=useState('Đang kết nối người chơi…');
  const [error,setError]=useState(''),[seatState,setSeatState]=useState({mode:'walking',name:''});
- const [selectedName,setSelectedName]=useState(''),[combatStatus,setCombatStatus]=useState('');
+ const [selectedId,setSelectedId]=useState(''),[combatStatus,setCombatStatus]=useState('');
+ const selectedName=players.find(player=>player.id===selectedId)?.name||'';
  useEffect(()=>{joy.current=joystick;},[joystick]);
  useEffect(()=>{
-  const parent=host.current;if(!parent)return;setError('');setSeatState({mode:'walking',name:''});setSelectedName('');setCombatStatus('');
+  const parent=host.current;if(!parent)return;setError('');setSeatState({mode:'walking',name:''});setSelectedId('');setCombatStatus('');setPlayers([]);setConnectionStatus('Đang kết nối người chơi…');
   let renderer;
   try{renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});}catch{setError('Không khởi tạo được 3D. Hãy bật tăng tốc đồ họa trong trình duyệt và tải lại trang.');return;}
   renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.75));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -83,9 +87,9 @@ export default function Game({action,chatText,joystick,roomName='Toàn quốc'})
    const rig=createAnimeAvatar(index);rig.group.position.set(x,0,z);scene.add(rig.group);
    textures.push(rig.ramp);
    const label=makeLabel(name);label.position.y=3.85;rig.group.add(label);
-   rig.group.userData.character=rig;rig.name=name;return {...rig,shade:shadow(x,z,1.8,1.8)};
+   rig.group.userData.character=rig;rig.name=name;return {...rig,label,shade:shadow(x,z,1.8,1.8)};
   }
-  const hero=avatar('Bạn',0,0,9);const bots=PLAZA_CHARACTERS.map((character,index)=>avatar(character.name,index+1,character.x,character.z));
+  const spawn=playerSpawn(userId||'local');const hero=avatar(nameRef.current,playerAppearance(userId||'local'),spawn.x,spawn.z);const bots=[];
   let selectedBot=null,pendingAttack=null,fight=null,waveStarted=-Infinity;
   let yaw=Math.PI/4,distance=23,bubble=null,bubbleUntil=0,emoteUntil=0,path=[],pendingSeat=null,seated=null;
   const keys=new Set(),raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2();let drag=null,hovered=null;
@@ -99,10 +103,20 @@ export default function Game({action,chatText,joystick,roomName='Toàn quốc'})
   const impact=new THREE.Group();scene.add(impact);impact.visible=false;
   for(let i=0;i<8;i++){const shard=mesh(new THREE.ConeGeometry(.07,.4,4),new THREE.MeshBasicMaterial({color:i%2?0xfff5bc:0xffb44f}),Math.cos(i*Math.PI/4)*.4,Math.sin(i*Math.PI/4)*.4,0,impact);shard.rotation.z=i*Math.PI/4-Math.PI/2;}
   function cancelCombat(){pendingAttack=null;fight=null;setCombatStatus('');}
-  function selectBot(name){cancelCombat();path=[];if(pendingSeat){pendingSeat=null;setSeatState({mode:'walking',name:''});}selectedBot=bots.find(bot=>bot.name===name)||null;setSelectedName(selectedBot?.name||'');}
+  function selectBot(id){cancelCombat();path=[];if(pendingSeat){pendingSeat=null;setSeatState({mode:'walking',name:''});}selectedBot=bots.find(bot=>bot.id===id)||null;setSelectedId(selectedBot?.id||'');}
   function wave(){cancelCombat();path=[];keys.clear();if(pendingSeat){pendingSeat=null;setSeatState({mode:'walking',name:''});}waveStarted=performance.now();hero.body.rotation.y=selectedBot?Math.atan2(selectedBot.group.position.x-hero.group.position.x,selectedBot.group.position.z-hero.group.position.z):yaw;say('👋 Xin chào!');}
-  function attack(){if(!selectedBot||fight||pendingAttack)return;stand();waveStarted=-Infinity;const route=planEncounter(hero.group.position,selectedBot.group.position,obstacles);if(!route){say('Chưa tìm được lối đến nhân vật này.');return;}keys.clear();pendingSeat=null;setSeatState({mode:'walking',name:''});path=route.path;pendingAttack=selectedBot;setCombatStatus('Đang tiến đến '+selectedBot.name);}
+  function attack(){if(selectedBot?.remote){say('Chan Nhau giữa người chơi chưa được bật.');return;}if(!selectedBot||fight||pendingAttack)return;stand();waveStarted=-Infinity;const route=planEncounter(hero.group.position,selectedBot.group.position,obstacles);if(!route){say('Chưa tìm được lối đến nhân vật này.');return;}keys.clear();pendingSeat=null;setSeatState({mode:'walking',name:''});path=route.path;pendingAttack=selectedBot;setCombatStatus('Đang tiến đến '+selectedBot.name);}
   api.current={say,stand,wave,attack,selectBot,nearestSeat(){const nearest=[...benches].sort((a,b)=>hero.group.position.distanceToSquared(new THREE.Vector3(a.x,0,a.z))-hero.group.position.distanceToSquared(new THREE.Vector3(b.x,0,b.z)))[0];requestSeat(nearest);},emote(emoji){if(emoji==='👋'){wave();return;}say(emoji);if(!seated)emoteUntil=performance.now()+900;}};
+  let network=null,disposed=false;
+  function publishRoster(){setPlayers(bots.map(bot=>({id:bot.id,name:bot.name})));}
+  function disposeAvatar(bot){scene.remove(bot.group);scene.remove(bot.shade);const geometries=new Set(),materials=new Set(),maps=new Set([bot.ramp]);for(const root of [bot.group,bot.shade])root.traverse(object=>{if(object.geometry)geometries.add(object.geometry);if(object.material){materials.add(object.material);if(object.material.map&&object.material.map!==textures[3])maps.add(object.material.map);}});geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());maps.forEach(t=>t.dispose());const index=textures.indexOf(bot.ramp);if(index>=0)textures.splice(index,1);}
+  function updatePlayer(state){if(disposed)return;let bot=bots.find(item=>item.id===state.id);if(!bot){bot=avatar(state.name,playerAppearance(state.id),state.x,state.z);bot.id=state.id;bot.remote=true;bot.waveId=state.waveId;bot.waveStarted=state.waveId?performance.now()-state.waveAge:-Infinity;bots.push(bot);publishRoster();}
+   if(bot.name!==state.name){bot.name=state.name;const old=bot.label;bot.group.remove(old);old.material.map.dispose();old.material.dispose();bot.label=makeLabel(state.name);bot.label.position.y=3.85;bot.group.add(bot.label);publishRoster();}
+   if(bot.waveId!==state.waveId){bot.waveId=state.waveId;bot.waveStarted=performance.now()-state.waveAge;}
+   bot.targetState=state;
+  }
+  function removePlayer(id){const index=bots.findIndex(bot=>bot.id===id);if(index<0)return;const bot=bots[index];if(selectedBot===bot){selectedBot=null;setSelectedId('');cancelCombat();path=[];}bots.splice(index,1);disposeAvatar(bot);publishRoster();}
+  if(supabase&&userId&&roomId)network=connectRoomPlayers({client:supabase,roomId,userId,name:nameRef.current,initialState:{x:spawn.x,z:spawn.z,yaw:0,seated:false,moving:false,waveId:'',waveAge:3200},onJoin:updatePlayer,onUpdate:updatePlayer,onLeave:removePlayer,onStatus:status=>{if(!disposed)setConnectionStatus(status==='SUBSCRIBED'?'Đã đồng bộ người chơi':'Đang kết nối lại người chơi…');}});
   const focused=()=>['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
   function keydown(e){if(focused())return;const key=e.key.toLowerCase();if(key==='e'&&!e.repeat){e.preventDefault();if(seated)stand();else api.current.nearestSeat();return;}if(['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d'].includes(key)){e.preventDefault();keys.add(key);}}
   const keyup=e=>keys.delete(e.key.toLowerCase()),blur=()=>{keys.clear();drag=null;};
@@ -110,7 +124,7 @@ export default function Game({action,chatText,joystick,roomName='Toàn quốc'})
   function aim(e){const rect=canvas.getBoundingClientRect();pointer.set((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1);raycaster.setFromCamera(pointer,camera);return raycaster.intersectObjects(benchMeshes,false)[0]?.object.userData.bench;}
   function down(e){if(e.button!==0&&e.button!==2)return;canvas.setPointerCapture(e.pointerId);drag={x:e.clientX,startX:e.clientX,startY:e.clientY,button:e.button,moved:false};}
   function move(e){if(!drag){hovered=aim(e);canvas.style.cursor=hovered?'pointer':'grab';return;}const dx=e.clientX-drag.x;if(Math.hypot(e.clientX-drag.startX,e.clientY-drag.startY)>5)drag.moved=true;if(drag.moved)yaw-=dx*.008;drag.x=e.clientX;}
-  function up(e){if(!drag)return;if(!drag.moved&&drag.button===0){const bench=aim(e);const picked=raycaster.intersectObjects(bots.map(bot=>bot.group),true)[0];if(picked){let object=picked.object;while(object&&!object.userData.character)object=object.parent;const bot=bots.find(item=>item.group===object);if(bot)selectBot(bot.name);}else if(bench){requestSeat(bench);}else{selectBot('');const hit=new THREE.Vector3();if(raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),-.2),hit))goTo({x:clamp(hit.x),z:clamp(hit.z)});}}drag=null;}
+  function up(e){if(!drag)return;if(!drag.moved&&drag.button===0){const bench=aim(e);const picked=raycaster.intersectObjects(bots.map(bot=>bot.group),true)[0];if(picked){let object=picked.object;while(object&&!object.userData.character)object=object.parent;const bot=bots.find(item=>item.group===object);if(bot)selectBot(bot.id);}else if(bench){requestSeat(bench);}else{selectBot('');const hit=new THREE.Vector3();if(raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),-.2),hit))goTo({x:clamp(hit.x),z:clamp(hit.z)});}}drag=null;}
   const cancel=()=>{drag=null;hovered=null;},context=e=>e.preventDefault(),wheel=e=>{e.preventDefault();distance=THREE.MathUtils.clamp(distance+e.deltaY*.015,11,46);};
   window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);window.addEventListener('blur',blur);canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',cancel);canvas.addEventListener('pointerleave',cancel);canvas.addEventListener('contextmenu',context);canvas.addEventListener('wheel',wheel,{passive:false});
   const resize=new ResizeObserver(()=>{const w=parent.clientWidth,h=parent.clientHeight;if(w&&h){renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();}});resize.observe(parent);
@@ -128,7 +142,7 @@ export default function Game({action,chatText,joystick,roomName='Toàn quốc'})
    const seatedNow=Boolean(seated);hero.legs.forEach((leg,i)=>leg.rotation.x=seatedNow?-Math.PI/2:moving?Math.sin(now*.012+i*Math.PI)*.48:0);hero.calves.forEach(calf=>calf.rotation.x=seatedNow?Math.PI/2:0);hero.arms.forEach((arm,i)=>{arm.rotation.set(seatedNow?-.55:moving?Math.sin(now*.012-i*Math.PI)*.35:0,0,0);});
    hero.forearms.forEach(arm=>arm.rotation.set(0,0,0));
    hero.body.position.y=seatedNow?-.15:now<emoteUntil?Math.abs(Math.sin(now*.018))*.4:0;hero.shade.position.set(hero.group.position.x,.225,hero.group.position.z);
-   bots.forEach((bot,i)=>{bot.body.position.set(0,Math.sin(now*.002+i)*.018,0);bot.body.rotation.x=0;bot.body.rotation.z=0;bot.arms.forEach(arm=>arm.rotation.set(0,0,0));bot.forearms.forEach(arm=>arm.rotation.set(0,0,0));});
+   bots.forEach(bot=>{const state=bot.targetState;if(!state)return;const previous=bot.group.position.clone();bot.group.position.lerp(new THREE.Vector3(state.x,0,state.z),1-Math.exp(-14*dt));const walking=state.moving&&previous.distanceToSquared(bot.group.position)>.000005;bot.body.rotation.y+=Math.atan2(Math.sin(state.yaw-bot.body.rotation.y),Math.cos(state.yaw-bot.body.rotation.y))*(1-Math.exp(-16*dt));bot.body.position.set(0,state.seated?-.15:0,0);bot.body.rotation.x=bot.body.rotation.z=0;bot.legs.forEach((leg,i)=>leg.rotation.x=state.seated?-Math.PI/2:walking?Math.sin(now*.012+i*Math.PI)*.48:0);bot.calves.forEach(calf=>calf.rotation.x=state.seated?Math.PI/2:0);bot.arms.forEach((arm,i)=>arm.rotation.set(state.seated?-.55:walking?Math.sin(now*.012-i*Math.PI)*.35:0,0,0));bot.forearms.forEach(arm=>arm.rotation.set(0,0,0));const pose=wavePose(now-bot.waveStarted);if(pose.active)bot.arms.forEach((arm,i)=>{const side=i===0?-1:1;arm.rotation.set(pose.x,0,side*pose.z);bot.forearms[i].rotation.z=side*pose.elbowZ;});bot.shade.position.set(bot.group.position.x,.225,bot.group.position.z);});
    hero.body.rotation.x=0;hero.body.rotation.z=0;hero.body.position.z=0;impact.visible=false;
    const waving=wavePose(now-waveStarted);if(waving.active&&!fight){hero.arms.forEach((arm,i)=>{const side=i===0?-1:1;arm.rotation.set(waving.x,0,side*waving.z);hero.forearms[i].rotation.z=side*waving.elbowZ;});}
    if(fight){const pose=fightPose(now-fight.started),target=fight.target;hero.body.rotation.y=Math.atan2(target.group.position.x-hero.group.position.x,target.group.position.z-hero.group.position.z);target.body.rotation.y=hero.body.rotation.y+Math.PI;
@@ -142,15 +156,16 @@ export default function Game({action,chatText,joystick,roomName='Toàn quốc'})
    const marked=pendingSeat||hovered;indicator.visible=Boolean(marked)&&!seated;if(marked)indicator.position.set(marked.x,.235,marked.z);
    look.lerp(new THREE.Vector3(hero.group.position.x,seatedNow?1.25:1.4,hero.group.position.z),1-Math.exp(-7*dt));camera.position.set(look.x+Math.sin(yaw)*distance,look.y+distance*.68,look.z+Math.cos(yaw)*distance);camera.lookAt(look);camera.updateMatrixWorld();
 
+   network?.publish({x:hero.group.position.x,z:hero.group.position.z,yaw:hero.body.rotation.y,seated:seatedNow,moving,waveId:Number.isFinite(waveStarted)?String(waveStarted):'',waveAge:Math.min(3200,Math.max(0,now-waveStarted))},nameRef.current);
    fishPond.update(now);renderer.render(scene,camera);
   }
   frame=requestAnimationFrame(animate);
-  return()=>{cancelAnimationFrame(frame);resize.disconnect();api.current=null;window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',cancel);canvas.removeEventListener('pointerleave',cancel);canvas.removeEventListener('contextmenu',context);canvas.removeEventListener('wheel',wheel);
+  return()=>{disposed=true;network?.close();cancelAnimationFrame(frame);resize.disconnect();api.current=null;window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',cancel);canvas.removeEventListener('pointerleave',cancel);canvas.removeEventListener('contextmenu',context);canvas.removeEventListener('wheel',wheel);
    const geometries=new Set(),mats=new Set(),maps=new Set(textures);scene.traverse(object=>{if(object.geometry)geometries.add(object.geometry);if(object.material){const list=Array.isArray(object.material)?object.material:[object.material];list.forEach(mat=>{mats.add(mat);if(mat.map)maps.add(mat.map);});}});geometries.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());maps.forEach(t=>t.dispose());environment.dispose();renderer.dispose();canvas.remove();};
- },[roomName]);
+ },[roomId,roomName,userId]);
  useEffect(()=>{if(action){if(action.type==='wave')api.current?.wave();else api.current?.emote(action.emoji);}},[action]);
  useEffect(()=>{if(chatText)api.current?.say(chatText.text);},[chatText]);
- return <div ref={host} className="phaser-host game-3d-host" aria-label="Quảng trường 3D: nhấn để đi, chọn ghế đá để ngồi, kéo để xoay camera">{error&&<p role="alert" className="game-3d-error">{error}</p>}<div className="character-actions"><div className="character-action-buttons"><button onClick={()=>api.current?.wave()}>👋 Vẫy tay</button><button disabled={!selectedName||combatStatus.startsWith('Đang')} onClick={()=>api.current?.attack()}>🥊 Chan Nhau</button></div><details className="character-directory"><summary>Danh sách nhân vật · {PLAZA_CHARACTERS.length}</summary><div className="character-directory-list">{PLAZA_CHARACTERS.length===0&&<p className="character-directory-empty">Chưa có nhân vật khác trên bản đồ.</p>}{PLAZA_CHARACTERS.map(character=>character.name).map(name=><button key={name} aria-pressed={selectedName===name} onClick={()=>api.current?.selectBot(name)}><span className="mini-avatar">{name[0]}</span><span>{name.replace(' · Mẫu','')}</span><span className="profile-arrow">›</span></button>)}</div></details>{selectedName&&<div className="character-profile"><div className="profile-title"><strong>{selectedName.replace(' · Mẫu','')}</strong><button aria-label="Đóng thông tin nhân vật" onClick={()=>api.current?.selectBot('')}>×</button></div><dl><div><dt>Phòng</dt><dd>{roomName}</dd></div><div><dt>Trạng thái</dt><dd>{combatStatus||'Đang ở quảng trường'}</dd></div></dl><p>Chọn Vẫy tay hoặc Chan Nhau để tương tác.</p></div>}<small role="status">{combatStatus|| (selectedName?'Đã chọn '+selectedName:'Nhấn nhân vật để chọn mục tiêu')}</small></div><div className="seat-controls"><span role="status">{seatState.mode==='seated'?`Đang ngồi · ${seatState.name}`:seatState.mode==='approaching'?`Đang đi tới ${seatState.name}…`:'Chọn ghế đá để ngồi nghỉ'}</span><button onClick={()=>seatState.mode==='seated'?api.current?.stand():api.current?.nearestSeat()}>{seatState.mode==='seated'?'Đứng dậy':'Ngồi ghế gần nhất'} <kbd>E</kbd></button></div></div>;
+ return <div ref={host} className="phaser-host game-3d-host" aria-label="Quảng trường 3D: nhấn để đi, chọn ghế đá để ngồi, kéo để xoay camera">{error&&<p role="alert" className="game-3d-error">{error}</p>}<div className="character-actions"><div className="character-action-buttons"><button onClick={()=>api.current?.wave()}>👋 Vẫy tay</button><button disabled title="Chan Nhau giữa người chơi chưa được bật" onClick={()=>api.current?.attack()}>🥊 Chan Nhau</button></div><details className="character-directory"><summary>Người trong phòng · {players.length+1}</summary><div className="character-directory-list">{players.length===0&&<p className="character-directory-empty">Chưa có người khác trong phòng.</p>}{players.map(player=><button key={player.id} aria-pressed={selectedId===player.id} onClick={()=>api.current?.selectBot(player.id)}><span className="mini-avatar">{player.name[0]}</span><span>{player.name}</span><span className="profile-arrow">›</span></button>)}</div></details>{selectedName&&<div className="character-profile"><div className="profile-title"><strong>{selectedName.replace(' · Mẫu','')}</strong><button aria-label="Đóng thông tin nhân vật" onClick={()=>api.current?.selectBot('')}>×</button></div><dl><div><dt>Phòng</dt><dd>{roomName}</dd></div><div><dt>Trạng thái</dt><dd>{combatStatus||'Đang ở quảng trường'}</dd></div></dl><p>Vẫy tay để chào người bạn đang chọn.</p></div>}<small role="status">{selectedName?'Đã chọn '+selectedName:connectionStatus}</small></div><div className="seat-controls"><span role="status">{seatState.mode==='seated'?`Đang ngồi · ${seatState.name}`:seatState.mode==='approaching'?`Đang đi tới ${seatState.name}…`:'Chọn ghế đá để ngồi nghỉ'}</span><button onClick={()=>seatState.mode==='seated'?api.current?.stand():api.current?.nearestSeat()}>{seatState.mode==='seated'?'Đứng dậy':'Ngồi ghế gần nhất'} <kbd>E</kbd></button></div></div>;
 }
 
 
