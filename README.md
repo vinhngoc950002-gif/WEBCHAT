@@ -1,4 +1,4 @@
-# Chat Avatar Việt Nam — Alpha 0.1
+# Kết Bạn Bốn Phương — Kết Nối Mọi Người
 
 Website mẫu có sảnh **64 phòng cộng đồng**, bản đồ đẳng trục 2.5D bằng Phaser 3, nhân vật tự di chuyển bằng WASD / phím mũi tên / chạm bản đồ / joystick, biểu cảm và bong bóng thoại, giao diện chat bằng React.
 
@@ -117,3 +117,4 @@ Mỗi phòng có một mô hình địa danh riêng ở giữa quảng trường
 - Supabase vẫn quản lý mật khẩu và phiên đăng nhập; ứng dụng ánh xạ tên sang định danh nội bộ `player.<username>@webchat-one-psi.vercel.app`. Người dùng không phải sở hữu hộp thư này. Không đổi miền định danh sau khi đã tạo tài khoản. Không lưu mật khẩu tại localStorage hay bảng dữ liệu riêng.
 - Trong Supabase Auth, bật Email provider và **tắt Confirm email**, rồi Save. Frontend kiểm tra `/auth/v1/settings` trước đăng ký để không tạo tài khoản chờ xác nhận ngoài ý muốn.
 - Tài khoản email cũ vẫn đăng nhập được bằng email cũ; không tự chuyển đổi chúng thành tài khoản tên đăng nhập. Form mới không yêu cầu email khi đăng ký.
+

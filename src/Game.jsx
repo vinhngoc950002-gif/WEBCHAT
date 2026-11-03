@@ -6,12 +6,12 @@ import {getLandmark} from './landmarks.js';
 import {createLandmark} from './createLandmark.js';
 import {createFishPond} from './fishPond.js';
 import {createAnimeAvatar} from './animeAvatar.js';
-import CharacterSocialActions from './CharacterSocialActions.jsx';
-import NpcMailbox from './NpcMailbox.jsx';
 import {wavePose,fightPose,planEncounter} from './characterActions.js';
 import {surfaceTexture,contactShadow} from './plazaMaterials.js';
 import {WORLD_LIMIT,seatPose,planPath} from './plazaNavigation.js';
 
+// Only actual scene participants belong here; sample NPCs are no longer spawned.
+const PLAZA_CHARACTERS=[];
 const clamp=v=>THREE.MathUtils.clamp(v,-WORLD_LIMIT,WORLD_LIMIT);
 function makeLabel(text,{bubble=false}={}){
  const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=192;
@@ -23,12 +23,11 @@ function makeLabel(text,{bubble=false}={}){
 
 export default function Game({action,chatText,joystick,roomName='Toàn quốc'}){
  const host=useRef(null),api=useRef(null),joy=useRef(joystick);
- const [mailPeer,setMailPeer]=useState(null);
  const [error,setError]=useState(''),[seatState,setSeatState]=useState({mode:'walking',name:''});
  const [selectedName,setSelectedName]=useState(''),[combatStatus,setCombatStatus]=useState('');
  useEffect(()=>{joy.current=joystick;},[joystick]);
  useEffect(()=>{
-  const parent=host.current;if(!parent)return;setError('');setSeatState({mode:'walking',name:''});setSelectedName('');setCombatStatus('');setMailPeer(null);
+  const parent=host.current;if(!parent)return;setError('');setSeatState({mode:'walking',name:''});setSelectedName('');setCombatStatus('');
   let renderer;
   try{renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});}catch{setError('Không khởi tạo được 3D. Hãy bật tăng tốc đồ họa trong trình duyệt và tải lại trang.');return;}
   renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.75));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -86,7 +85,7 @@ export default function Game({action,chatText,joystick,roomName='Toàn quốc'})
    const label=makeLabel(name);label.position.y=3.85;rig.group.add(label);
    rig.group.userData.character=rig;rig.name=name;return {...rig,shade:shadow(x,z,1.8,1.8)};
   }
-  const hero=avatar('Bạn',0,0,9);const bots=[avatar('Mây · Mẫu',1,-5,11),avatar('Bảo · Mẫu',2,11,4),avatar('Linh · Mẫu',3,-11,-3),avatar('An · Mẫu',4,6,-11)];
+  const hero=avatar('Bạn',0,0,9);const bots=PLAZA_CHARACTERS.map((character,index)=>avatar(character.name,index+1,character.x,character.z));
   let selectedBot=null,pendingAttack=null,fight=null,waveStarted=-Infinity;
   let yaw=Math.PI/4,distance=23,bubble=null,bubbleUntil=0,emoteUntil=0,path=[],pendingSeat=null,seated=null;
   const keys=new Set(),raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2();let drag=null,hovered=null;
@@ -151,7 +150,7 @@ export default function Game({action,chatText,joystick,roomName='Toàn quốc'})
  },[roomName]);
  useEffect(()=>{if(action){if(action.type==='wave')api.current?.wave();else api.current?.emote(action.emoji);}},[action]);
  useEffect(()=>{if(chatText)api.current?.say(chatText.text);},[chatText]);
- return <div ref={host} className="phaser-host game-3d-host" aria-label="Quảng trường 3D: nhấn để đi, chọn ghế đá để ngồi, kéo để xoay camera">{error&&<p role="alert" className="game-3d-error">{error}</p>}{mailPeer&&<NpcMailbox key={mailPeer} name={mailPeer} onClose={()=>setMailPeer(null)}/>}<div className="character-actions"><div className="character-action-buttons"><button onClick={()=>api.current?.wave()}>👋 Vẫy tay</button><button disabled={!selectedName||combatStatus.startsWith('Đang')} onClick={()=>api.current?.attack()}>🥊 Chan Nhau</button></div><details className="character-directory"><summary>Danh sách nhân vật · 4</summary><div className="character-directory-list">{['Mây · Mẫu','Bảo · Mẫu','Linh · Mẫu','An · Mẫu'].map(name=><button key={name} aria-pressed={selectedName===name} onClick={()=>api.current?.selectBot(name)}><span className="mini-avatar">{name[0]}</span><span>{name.replace(' · Mẫu','')}<small>Nhân vật mẫu</small></span><span className="profile-arrow">›</span></button>)}</div></details>{selectedName&&<div className="character-profile"><div className="profile-title"><strong>{selectedName.replace(' · Mẫu','')}</strong><button aria-label="Đóng thông tin nhân vật" onClick={()=>api.current?.selectBot('')}>×</button></div><dl><div><dt>Loại</dt><dd>Nhân vật mẫu (NPC)</dd></div><div><dt>Phòng</dt><dd>{roomName}</dd></div><div><dt>Trạng thái</dt><dd>{combatStatus||'Đang ở quảng trường'}</dd></div></dl><CharacterSocialActions key={selectedName} name={selectedName} onMessage={setMailPeer}/><p>Chọn Vẫy tay hoặc Chan Nhau để tương tác.</p></div>}<small role="status">{combatStatus|| (selectedName?'Đã chọn '+selectedName:'Nhấn nhân vật để chọn mục tiêu')}</small></div><div className="seat-controls"><span role="status">{seatState.mode==='seated'?`Đang ngồi · ${seatState.name}`:seatState.mode==='approaching'?`Đang đi tới ${seatState.name}…`:'Chọn ghế đá để ngồi nghỉ'}</span><button onClick={()=>seatState.mode==='seated'?api.current?.stand():api.current?.nearestSeat()}>{seatState.mode==='seated'?'Đứng dậy':'Ngồi ghế gần nhất'} <kbd>E</kbd></button></div></div>;
+ return <div ref={host} className="phaser-host game-3d-host" aria-label="Quảng trường 3D: nhấn để đi, chọn ghế đá để ngồi, kéo để xoay camera">{error&&<p role="alert" className="game-3d-error">{error}</p>}<div className="character-actions"><div className="character-action-buttons"><button onClick={()=>api.current?.wave()}>👋 Vẫy tay</button><button disabled={!selectedName||combatStatus.startsWith('Đang')} onClick={()=>api.current?.attack()}>🥊 Chan Nhau</button></div><details className="character-directory"><summary>Danh sách nhân vật · {PLAZA_CHARACTERS.length}</summary><div className="character-directory-list">{PLAZA_CHARACTERS.length===0&&<p className="character-directory-empty">Chưa có nhân vật khác trên bản đồ.</p>}{PLAZA_CHARACTERS.map(character=>character.name).map(name=><button key={name} aria-pressed={selectedName===name} onClick={()=>api.current?.selectBot(name)}><span className="mini-avatar">{name[0]}</span><span>{name.replace(' · Mẫu','')}</span><span className="profile-arrow">›</span></button>)}</div></details>{selectedName&&<div className="character-profile"><div className="profile-title"><strong>{selectedName.replace(' · Mẫu','')}</strong><button aria-label="Đóng thông tin nhân vật" onClick={()=>api.current?.selectBot('')}>×</button></div><dl><div><dt>Phòng</dt><dd>{roomName}</dd></div><div><dt>Trạng thái</dt><dd>{combatStatus||'Đang ở quảng trường'}</dd></div></dl><p>Chọn Vẫy tay hoặc Chan Nhau để tương tác.</p></div>}<small role="status">{combatStatus|| (selectedName?'Đã chọn '+selectedName:'Nhấn nhân vật để chọn mục tiêu')}</small></div><div className="seat-controls"><span role="status">{seatState.mode==='seated'?`Đang ngồi · ${seatState.name}`:seatState.mode==='approaching'?`Đang đi tới ${seatState.name}…`:'Chọn ghế đá để ngồi nghỉ'}</span><button onClick={()=>seatState.mode==='seated'?api.current?.stand():api.current?.nearestSeat()}>{seatState.mode==='seated'?'Đứng dậy':'Ngồi ghế gần nhất'} <kbd>E</kbd></button></div></div>;
 }
 
 
