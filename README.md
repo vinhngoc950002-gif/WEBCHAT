@@ -128,3 +128,9 @@ Mỗi phòng có một mô hình địa danh riêng ở giữa quảng trường
 - Đây là đồng bộ client qua kênh Realtime công khai, không phải máy chủ vật lý có chống gian lận. Chan Nhau giữa người chơi chưa được bật; hoạt ảnh đánh NPC cũ không được áp dụng giả lên tài khoản thật.
 - Kiểm tra kết nối thực tế: có `.env.local` chứa hai biến Supabase rồi chạy `node scripts/check-room-sync.mjs`. Bài kiểm tra mở hai kết nối độc lập cùng một phòng kiểm thử tạm, kiểm tra thấy nhau, vào sau, vị trí, vẫy tay, tư thế ngồi, rời phòng và cách ly phòng. Không tạo tài khoản hoặc ghi dữ liệu lâu dài.
 - Kiểm tra giao diện bằng hai trình duyệt / cửa sổ ẩn danh, đăng nhập hai tài khoản khác nhau vào cùng mã phòng; di chuyển ở một cửa sổ và quan sát cửa sổ kia. Cả hai phải tải lại bản triển khai mới.
+
+### Khôi phục danh sách người chơi và số đếm
+
+Kênh plaza bổ sung handshake `player-hello`, heartbeat và bản tin rời phòng. Khi ảnh chụp Presence cập nhật chậm, hai client vẫn trao đổi trạng thái trực tiếp trong đúng kênh phòng. Tiêu đề phòng và bảng nhân vật sử dụng cùng callback số người từ transport, thay vì đếm từ kênh chat riêng. Số đếm là số tài khoản duy nhất, bao gồm bản thân; khi mất kết nối thì hiển thị trạng thái đang kết nối thay vì khẳng định đã đồng bộ.
+
+`node scripts/check-room-discovery.mjs` kiểm tra trường hợp cố tình không cung cấp Presence snapshot, tìm nhau qua hello, chuyển động, cách ly phòng và cập nhật số lượng sau khi rời. Đây vẫn là cơ chế đồng bộ client, không phải máy chủ xác thực vị trí/chống giả mạo.
